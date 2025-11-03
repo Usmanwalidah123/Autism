@@ -24,6 +24,9 @@ def build_model():
     Builds the exact same model architecture as in the training script.
     Note: 'weights=None' because we are loading our own saved weights.
     """
+    # Disable eager execution for better performance with pre-loaded models
+    tf.config.run_functions_eagerly(False)
+
     base_model_resnet = ResNet50(include_top=False, 
                                  weights=None,  # We will load our own weights
                                  input_shape=(IMAGE_SIZE, IMAGE_SIZE, 3))
@@ -40,6 +43,7 @@ def build_model():
     ])
     return model
 
+# st.cache_resource is perfect for large objects like models
 @st.cache_resource
 def load_model():
     """
@@ -50,8 +54,9 @@ def load_model():
         model.load_weights(WEIGHTS_FILE)
         return model
     except Exception as e:
-        st.error(f"Error loading model weights: {e}")
-        st.error(f"Please make sure the file '{WEIGHTS_FILE}' is in the same directory as this script.")
+        # We handle the primary error case with os.path.exists below, 
+        # but this catches other loading issues (e.g., corrupted file)
+        st.error(f"An unexpected error occurred while loading the model: {e}")
         return None
 
 def preprocess_image(image_pil):
@@ -71,7 +76,7 @@ def preprocess_image(image_pil):
     # Expand dimensions to create a batch of 1
     image_batch = tf.expand_dims(image_array, 0)
     
-    # Apply the ResNet-specific preprocessing
+    # Apply the ResNet-specific preprocessing (converts to BGR and adjusts range)
     processed_image = resnet.preprocess_input(image_batch)
     
     return processed_image
@@ -87,7 +92,8 @@ st.write(f"**Note:** This is a demo tool based on your trained model. Please ens
 if not os.path.exists(WEIGHTS_FILE):
     st.error(f"**Model weights file not found!**")
     st.write(f"Please download your trained weights file, rename it to `{WEIGHTS_FILE}`, and place it in the same folder as this Streamlit app.")
-    st.stop()
+    # Stop execution here to prevent the model loading attempt from crashing
+    st.stop() 
 
 # Load the model
 model = load_model()
@@ -111,7 +117,8 @@ if model is not None:
                 processed_image = preprocess_image(image)
                 
                 # Make prediction
-                prediction = model.predict(processed_image)
+                # Use numpy for prediction for compatibility
+                prediction = model.predict(processed_image, verbose=0)
                 
                 # Get the class and confidence
                 predicted_class_index = np.argmax(prediction)
@@ -134,3 +141,4 @@ if model is not None:
         
         except Exception as e:
             st.error(f"An error occurred while processing the image: {e}")
+            st.exception(e) # Show full traceback for debugging
